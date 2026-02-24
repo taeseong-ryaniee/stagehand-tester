@@ -1,0 +1,25 @@
+# 환경변수 (자격증명 포함)
+.env
+
+# 의존성
+node_modules/
+.yarn/
+
+# 빌드 결과
+dist/
+
+# 테스트 결과 (HTML/JSON 리포트, 스크린샷)
+results/
+!results/.gitkeep
+
+# Bun 캐시
+.bun/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

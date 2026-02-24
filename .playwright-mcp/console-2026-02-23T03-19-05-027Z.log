@@ -1,0 +1,1 @@
+[   15898ms] [ERROR] Mixed Content: The page at 'https://swunivlms.gabia.io/' was loaded over HTTPS, but requested an insecure script 'http://errdoc.gabia.io/404.html'. This request has been blocked; the content must be served over HTTPS. @ https://swunivlms.gabia.io/:0

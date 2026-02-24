@@ -1,0 +1,7 @@
+[install]
+# Bun 패키지 설치 설정
+optional = true
+
+[run]
+# TypeScript 직접 실행 (컴파일 불필요)
+bun = true

@@ -1,0 +1,40 @@
+{
+  "name": "stagehand-lms-tester",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "test": "bun run src/runner/run-all.ts",
+    "test:unit": "bun run src/runner/run-unit.ts",
+    "test:integration": "bun run src/runner/run-integration.ts",
+    "test:login": "bun run src/tests/unit/01_login.test.ts",
+    "test:dashboard": "bun run src/tests/unit/02_dashboard.test.ts",
+    "test:navigation": "bun run src/tests/unit/03_navigation.test.ts",
+    "test:filters": "bun run src/tests/unit/04_search_filters.test.ts",
+    "test:pagination": "bun run src/tests/unit/05_pagination.test.ts",
+    "test:e2e:auth": "bun run src/tests/integration/10_login_to_dashboard.test.ts",
+    "test:e2e:courses": "bun run src/tests/integration/11_course_management.test.ts",
+    "test:e2e:students": "bun run src/tests/integration/12_student_management.test.ts",
+    "test:e2e:creation": "bun run src/tests/integration/13_course_creation.test.ts",
+    "test:e2e:session": "bun run src/tests/integration/14_session_persistence.test.ts",
+    "test:e2e:registration": "bun run src/tests/integration/15_course_registration.test.ts",
+    "test:form": "bun run src/tests/unit/06_form_validation.test.ts",
+    "test:e2e:search": "bun run src/tests/integration/16_search_filter_workflow.test.ts",
+    "test:e2e:data": "bun run src/tests/integration/17_data_read_workflow.test.ts",
+    "test:e2e:permission": "bun run src/tests/integration/18_permission_boundary.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^3.0.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "typescript": "^5.6.0"
+  }
+}
