@@ -23,3 +23,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Claude Code 내부 파일
+.claude/
