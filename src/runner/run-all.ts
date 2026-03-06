@@ -1,7 +1,7 @@
 /**
  * run-all.ts — 전체 테스트 실행 (유닛 + 통합)
  *
- * 유닛 테스트 8개 → 통합 테스트 9개 순서로 실행하고
+ * 유닛 테스트 8개 → 통합 테스트 11개 순서로 실행하고
  * 최종 HTML + JSON 리포트를 생성합니다.
  */
 
@@ -41,6 +41,8 @@ const ALL_TESTS = [
   { file: "src/tests/integration/16_search_filter_workflow.test.ts", type: "integration" },
   { file: "src/tests/integration/17_data_read_workflow.test.ts", type: "integration" },
   { file: "src/tests/integration/18_permission_boundary.test.ts", type: "integration" },
+  { file: "src/tests/integration/19_role_screen_matrix.test.ts", type: "integration" },
+  { file: "src/tests/integration/20_role_functional_scenarios.test.ts", type: "integration" },
 ];
 
 const UNIT_COUNT = ALL_TESTS.filter((t) => t.type === "unit").length;

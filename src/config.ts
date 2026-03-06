@@ -109,7 +109,7 @@ async function loadCredentials(): Promise<{ username: string; password: string }
 const credentials = await loadCredentials();
 
 export const config = {
-  baseUrl: process.env.LMS_BASE_URL ?? "https://swunivlms.gabia.io",
+  baseUrl: process.env.LMS_BASE_URL ?? "https://lms.cbeduhub.or.kr",
 
   credentials,
 

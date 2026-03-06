@@ -1,7 +1,7 @@
 /**
  * run-integration.ts — 통합 테스트 순차 실행
  *
- * 통합 테스트 6개를 순서대로 실행하고 결과를 수집합니다.
+ * 통합 테스트를 순서대로 실행하고 결과를 수집합니다.
  * 각 테스트는 별도 child process로 실행되어 완전히 격리됩니다.
  */
 
@@ -31,6 +31,8 @@ const INTEGRATION_TESTS = [
   "src/tests/integration/16_search_filter_workflow.test.ts",
   "src/tests/integration/17_data_read_workflow.test.ts",
   "src/tests/integration/18_permission_boundary.test.ts",
+  "src/tests/integration/19_role_screen_matrix.test.ts",
+  "src/tests/integration/20_role_functional_scenarios.test.ts",
 ];
 
 async function runTests(): Promise<SuiteResult[]> {

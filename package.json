@@ -26,6 +26,8 @@
     "test:e2e:search": "bun run src/tests/integration/16_search_filter_workflow.test.ts",
     "test:e2e:data": "bun run src/tests/integration/17_data_read_workflow.test.ts",
     "test:e2e:permission": "bun run src/tests/integration/18_permission_boundary.test.ts",
+    "test:e2e:roles": "bun run src/tests/integration/19_role_screen_matrix.test.ts",
+    "test:e2e:role-scenarios": "bun run src/tests/integration/20_role_functional_scenarios.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
