@@ -19,6 +19,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { navigateTo, assertNoErrorPage } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { waitForTableLoad } from "../../helpers/wait.js";
 import { config } from "../../config.js";
 
@@ -134,6 +135,31 @@ async function run() {
       await waitForTableLoad(page);
 
       await assertNoErrorPage(stagehand);
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
+      }
     },
     page
   );

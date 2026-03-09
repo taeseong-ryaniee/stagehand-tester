@@ -11,14 +11,15 @@
  *        — 페이지 제목이 비어있으면 렌더링 실패로 판단
  *   10.  사이드바 '통합수강생관리' 링크(code=148) 클릭 → URL에 code=148 포함 여부
  *        — 클릭 후 URL이 바뀌지 않으면 SPA 라우팅 또는 링크 문제
- *   11.  뒤로가기 후 로그인 세션 유지 여부
- *        — 루트(/)나 index.php로 돌아가면 세션 만료로 판단
+ *   11.  존재하지 않는 code(9999) 접근 시 500 에러 없이 처리되는지 확인
+ *   12.  잘못된 code(abc) 접근 시 500 에러 없이 처리되는지 확인
  */
 
 import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { assertNoErrorPage, navigateTo } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { config } from "../../config.js";
 
 const PAGES_TO_CHECK = [
@@ -109,24 +110,70 @@ async function run() {
     page
   );
 
-  // --- TEST 11: 뒤로가기 후 세션 유지 ---
+  // --- TEST 11: 존재하지 않는 code 처리 ---
   await testCase(
     results,
-    "[히스토리 뒤로가기] 이전 페이지 복귀 후 로그인 세션이 유지되는지 확인",
+    "[예외 처리] 존재하지 않는 code=9999 접근 시 500 Internal Server Error가 발생하지 않는지 확인",
     async () => {
-      // [검증 목적] 브라우저 뒤로가기 시 세션 쿠키가 유지되어 다시 로그인 페이지로
-      // 강제 이동하지 않는지 확인한다.
-      await page.goBack();
+      await page.goto(config.baseUrl + "/sub.php?code=9999", {
+        waitUntil: "domcontentloaded",
+      });
       await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
 
-      const url = page.url();
-      if (url.endsWith("/") || url.includes("index.php")) {
-        throw new Error(
-          `뒤로가기 후 로그인 페이지로 리다이렉트됨 (세션 만료 의심).\n` +
-          `  현재 URL: ${url}\n` +
-          `  → 세션 쿠키 만료 시간이 너무 짧거나, 서버가 뒤로가기 요청을 세션 없음으로 처리하는 것일 수 있음`
-        );
+      const content = await page.content();
+      const hasInternalServerError =
+        content.includes("Internal Server Error") ||
+        content.includes("500");
+      if (hasInternalServerError) {
+        throw new Error("존재하지 않는 code 접근 시 500 Internal Server Error 발생");
+      }
+    },
+    page
+  );
+
+  // --- TEST 12: 잘못된 code 파라미터 처리 ---
+  await testCase(
+    results,
+    "[예외 처리] 잘못된 code=abc 접근 시 500 Internal Server Error가 발생하지 않는지 확인",
+    async () => {
+      await page.goto(config.baseUrl + "/sub.php?code=abc", {
+        waitUntil: "domcontentloaded",
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      const content = await page.content();
+      const hasInternalServerError =
+        content.includes("Internal Server Error") ||
+        content.includes("500");
+      if (hasInternalServerError) {
+        throw new Error("잘못된 code 파라미터 접근 시 500 Internal Server Error 발생");
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page

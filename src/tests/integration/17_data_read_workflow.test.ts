@@ -20,6 +20,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { navigateTo, assertNoErrorPage } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { waitForTableLoad } from "../../helpers/wait.js";
 import { config } from "../../config.js";
 
@@ -86,12 +87,12 @@ async function run() {
       await waitForTableLoad(page);
 
       // Stagehand extract로 총 건수 추출
-      const countInfo = await stagehand.extract({
-        instruction: "페이지에서 총 건수 또는 전체 결과 수를 나타내는 숫자를 찾아주세요",
-        schema: z.object({
+      const { totalCount } = await stagehand.extract(
+        "페이지에서 총 건수 또는 전체 결과 수를 나타내는 숫자를 찾아주세요",
+        z.object({
           totalCount: z.number().nullable().describe("총 건수 숫자, 없으면 null"),
-        }),
-      });
+        })
+      );
 
       // 페이지당 표시 행 수
       const rowCount: number = await page.evaluate(() =>
@@ -99,10 +100,10 @@ async function run() {
       );
 
       // 총 건수 >= 현재 페이지 행 수 (페이지네이션으로 일부만 표시될 수 있음)
-      if (countInfo.totalCount !== null && countInfo.totalCount < rowCount) {
+      if (totalCount !== null && totalCount < rowCount) {
         throw new Error(
           `강의운영관리 총 건수 표시값이 현재 페이지 행 수보다 작아 데이터 정합성 오류 의심.\n` +
-          `  총 건수 텍스트 추출값: ${countInfo.totalCount}\n` +
+          `  총 건수 텍스트 추출값: ${totalCount}\n` +
           `  현재 페이지 tbody tr 수: ${rowCount}\n` +
           `  → 총 건수 계산 로직 오류이거나 페이지네이션 없이 전체 데이터가 노출되고 있을 가능성 있음`
         );
@@ -196,6 +197,31 @@ async function run() {
           `  빈 상태 텍스트(검색 결과가 없/데이터가 없/No data): 없음\n` +
           `  → 검색 응답이 UI 컴포넌트에 전달되지 않았거나 결과 렌더링 로직에 오류가 있을 가능성 있음`
         );
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page

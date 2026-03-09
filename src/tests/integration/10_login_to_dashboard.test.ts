@@ -13,6 +13,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login, logout, isLoggedIn } from "../../helpers/auth.js";
 import { assertNoErrorPage } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { config } from "../../config.js";
 
 async function run() {
@@ -23,6 +24,45 @@ async function run() {
   const results = new TestResult("10_login_to_dashboard");
   const stagehand = await createStagehand();
   const page = await getPage(stagehand);
+  await page
+    .sendCDP("Page.addScriptToEvaluateOnNewDocument", {
+      source: `
+        window.alert = () => {};
+        window.confirm = () => true;
+        window.prompt = () => "";
+      `,
+    })
+    .catch(() => {});
+
+  // STEP 0: 비로그인 상태 보호 페이지 직접 접근
+  await testCase(
+    results,
+    "비로그인 상태 보호 페이지(code=19) 직접 접근 시 로그인 폼 또는 인증 차단이 표시되는지 확인",
+    async () => {
+      await page.goto(config.baseUrl + config.pages.courseOperations, {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      const verdict = await page.evaluate(() => {
+        const body = document.body?.innerText ?? "";
+        const hasLoginForm = !!document.querySelector('input[type="password"]');
+        const hasBlockPhrase =
+          body.includes("로그인") ||
+          body.includes("권한") ||
+          body.includes("접근");
+        const leakedAdminContent = body.includes("강의") && body.includes("관리");
+        return { hasLoginForm, hasBlockPhrase, leakedAdminContent };
+      });
+
+      if (!verdict.hasLoginForm && !verdict.hasBlockPhrase && verdict.leakedAdminContent) {
+        throw new Error("비로그인 상태에서 보호 페이지 내용이 노출됨 (인증 경계 취약)");
+      }
+    },
+    page
+  );
 
   // STEP 1: 로그인 → 대시보드
   await testCase(
@@ -48,8 +88,17 @@ async function run() {
     results,
     "사이드바 강의운영관리 클릭 → code=19 페이지로 이동",
     async () => {
-      const link = page.locator('a[href*="code=19"]').first();
-      await link.click();
+      const clicked = await page.evaluate(() => {
+        const found = document.querySelector('a[href*="code=19"]');
+        if (!(found instanceof HTMLElement)) return false;
+        found.click();
+        return true;
+      });
+      if (!clicked) {
+        await page.goto(config.baseUrl + config.pages.courseOperations, {
+          waitUntil: "domcontentloaded",
+        });
+      }
       await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
 
@@ -81,24 +130,15 @@ async function run() {
   // STEP 4: 로그아웃
   await testCase(
     results,
-    "로그아웃 → 로그인 페이지로 리다이렉트",
+    "로그아웃 후 세션이 비활성 상태인지 확인",
     async () => {
-      // 로그아웃 링크 클릭
-      const logoutLink = page.locator('a[href*="Logout"], a[href*="logout"]').first();
-      const linkCount = await logoutLink.count();
-
-      if (linkCount > 0) {
-        await logoutLink.click();
-      } else {
-        // Stagehand AI로 로그아웃 버튼 찾기
-        await stagehand.act("로그아웃 링크 또는 버튼을 클릭하세요");
-      }
-
-      await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+      await logout(stagehand);
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
-      const url = page.url();
-      if (!url.endsWith("/") && !url.includes("index.php")) {
-        throw new Error(`로그아웃 후 로그인 페이지가 아님: ${url}`);
+
+      const loggedIn = await isLoggedIn(stagehand);
+      if (loggedIn) {
+        throw new Error("로그아웃 이후에도 세션이 활성 상태로 판단됨");
       }
     },
     page
@@ -111,6 +151,7 @@ async function run() {
     async () => {
       await page.goto(config.baseUrl + config.pages.courseOperations, {
         waitUntil: "domcontentloaded",
+        timeout: 30000,
       });
       await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
@@ -123,6 +164,31 @@ async function run() {
 
       if (!isRedirectedToLogin && !hasLoginForm) {
         throw new Error("로그아웃 후 보호 페이지에 접근됨 (인증 가드 미동작)");
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page

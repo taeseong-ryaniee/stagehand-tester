@@ -6,9 +6,10 @@
  */
 
 import { spawnSync } from "child_process";
-import { mkdirSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
 import { saveReports, getRunDir } from "../helpers/reporter.js";
 import type { SuiteResult } from "../helpers/reporter.js";
+import { buildPersonaCoveragePayload, readPersonaSuiteReports } from "../helpers/persona.js";
 
 function generateRunId(): string {
   const now = new Date();
@@ -30,9 +31,7 @@ const INTEGRATION_TESTS = [
   "src/tests/integration/15_course_registration.test.ts",
   "src/tests/integration/16_search_filter_workflow.test.ts",
   "src/tests/integration/17_data_read_workflow.test.ts",
-  "src/tests/integration/18_permission_boundary.test.ts",
-  "src/tests/integration/19_role_screen_matrix.test.ts",
-  "src/tests/integration/20_role_functional_scenarios.test.ts",
+  "src/tests/integration/20_user_functional_scenarios.test.ts",
 ];
 
 async function runTests(): Promise<SuiteResult[]> {
@@ -100,6 +99,13 @@ const suites = await runTests();
 const runDir = getRunDir();
 mkdirSync(runDir, { recursive: true });
 saveReports(suites);
+const personaReports = readPersonaSuiteReports(getRunDir());
+const personaCoveragePayload = buildPersonaCoveragePayload(personaReports);
+writeFileSync(
+  `${getRunDir()}/persona_coverage.json`,
+  JSON.stringify(personaCoveragePayload, null, 2),
+  "utf-8"
+);
 console.log(`   실행 ID: ${runId}`);
 
 const hasFailures = suites.some((s) => s.tests.some((t) => t.status === "failed"));

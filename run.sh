@@ -3,6 +3,8 @@
 # LMS Stagehand 테스트 실행 스크립트
 # 사용법:
 #   ./run.sh              # 전체 테스트
+#   ./run.sh --smoke      # 스모크 게이트
+#   ./run.sh --gate       # 사전 배포 게이트(기능 중심 전체 프로세스)
 #   ./run.sh --unit       # 유닛 테스트만
 #   ./run.sh --integration # 통합 테스트만
 #   ./run.sh --open       # 전체 실행 후 HTML 리포트 자동 열기
@@ -33,6 +35,8 @@ print_help() {
   echo "사용법: ./run.sh [옵션]"
   echo ""
   echo "옵션:"
+  echo "  --smoke         스모크 게이트 실행 (핵심 인증/권한/네비게이션)"
+  echo "  --gate          사전 배포 게이트 실행 (1~17 + 사용자 통합 20)"
   echo "  --unit          유닛 테스트만 실행"
   echo "  --integration   통합 테스트만 실행"
   echo "  --open          전체 실행 후 HTML 리포트 자동 열기 (macOS)"
@@ -40,6 +44,8 @@ print_help() {
   echo ""
   echo "예시:"
   echo "  ./run.sh                  # 전체 테스트"
+  echo "  ./run.sh --smoke          # 스모크 게이트"
+  echo "  ./run.sh --gate           # 사전 배포 게이트"
   echo "  ./run.sh --unit           # 유닛 테스트만"
   echo "  ./run.sh --open           # 전체 실행 + 리포트 자동 열기"
 }
@@ -133,6 +139,12 @@ run_tests() {
   echo ""
 
   case "$mode" in
+    smoke)
+      TEST_STAGE=smoke bun run src/runner/run-all.ts || exit_code=$?
+      ;;
+    gate)
+      TEST_STAGE=gate bun run src/runner/run-all.ts || exit_code=$?
+      ;;
     unit)
       bun run src/runner/run-unit.ts || exit_code=$?
       ;;
@@ -148,16 +160,29 @@ run_tests() {
 }
 
 open_report() {
-  if [ -f "results/report.html" ]; then
+  local report_file=""
+  local latest_run_report=""
+
+  latest_run_report=$(ls -1t results/*/report.html 2>/dev/null | head -n 1 || true)
+  if [ -n "$latest_run_report" ]; then
+    report_file="$latest_run_report"
+  elif [ -f "results/report.html" ]; then
+    report_file="results/report.html"
+  fi
+
+  if [ -n "$report_file" ]; then
+    local json_file="${report_file%report.html}report.json"
     echo ""
-    echo -e "${GREEN}📊 HTML 리포트: results/report.html${NC}"
-    echo -e "${GREEN}📋 JSON 리포트: results/report.json${NC}"
+    echo -e "${GREEN}📊 HTML 리포트: ${report_file}${NC}"
+    if [ -f "$json_file" ]; then
+      echo -e "${GREEN}📋 JSON 리포트: ${json_file}${NC}"
+    fi
 
     if [[ "$1" == "--open" ]]; then
       if command -v open &> /dev/null; then
-        open results/report.html
+        open "$report_file"
       elif command -v xdg-open &> /dev/null; then
-        xdg-open results/report.html
+        xdg-open "$report_file"
       fi
     fi
   fi
@@ -171,6 +196,12 @@ AUTO_OPEN=false
 
 for arg in "$@"; do
   case "$arg" in
+    --smoke) MODE="smoke" ;;
+    --gate) MODE="gate" ;;
+    --full-roles)
+      echo -e "${YELLOW}⚠️  --full-roles 옵션은 폐기 예정입니다. --gate로 대체 실행합니다.${NC}"
+      MODE="gate"
+      ;;
     --unit) MODE="unit" ;;
     --integration) MODE="integration" ;;
     --open) AUTO_OPEN=true ;;

@@ -14,9 +14,10 @@
  */
 
 import { createStagehand, getPage } from "../../stagehand.js";
-import { login, isLoggedIn } from "../../helpers/auth.js";
+import { login, logout, isLoggedIn } from "../../helpers/auth.js";
 import { navigateTo } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { config } from "../../config.js";
 
 async function run() {
@@ -125,6 +126,62 @@ async function run() {
           `  isLoggedIn() 반환값: ${loggedIn}\n` +
           `  → 세션 타임아웃이 너무 짧게 설정되어 있거나, 서버의 세션 TTL 설정 확인 필요`
         );
+      }
+    },
+    page
+  );
+
+  // STEP 5: 로그아웃 후 뒤로가기/새로고침 경계 확인
+  await testCase(
+    results,
+    "[세션경계] 로그아웃 후 뒤로가기 + 새로고침 시 보호 페이지 세션이 복원되지 않는지 확인",
+    async () => {
+      await page.goto(config.baseUrl + config.pages.courseOperations, {
+        waitUntil: "domcontentloaded",
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      await logout(stagehand);
+      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      await page.goBack();
+      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
+      await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
+
+      const loggedIn = await isLoggedIn(stagehand);
+      if (loggedIn) {
+        throw new Error("로그아웃 후 뒤로가기/새로고침에서 세션이 복원됨");
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page

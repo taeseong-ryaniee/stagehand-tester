@@ -19,6 +19,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { navigateTo } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { config } from "../../config.js";
 
 async function run() {
@@ -47,16 +48,25 @@ async function run() {
         );
       }
 
-      const content = await page.content();
-      const hasError = ["404", "500", "오류가 발생", "접근 권한이 없"].some(
-        (err) => content.includes(err)
+      const { title, heading } = (await page.evaluate(() => {
+        const headingEl =
+          document.querySelector("h1, h2, .error-title, .error-message, #error-title") ??
+          document.querySelector(".error, .err_wrap, .page-error");
+        return {
+          title: document.title?.trim() ?? "",
+          heading: (headingEl as HTMLElement | null)?.innerText?.trim() ?? "",
+        };
+      })) as { title: string; heading: string };
+
+      const hasHttpError = [/\b403\b/, /\b404\b/, /\b500\b/].some(
+        (pattern) => pattern.test(title) || pattern.test(heading)
       );
-      if (hasError) {
-        const matched = ["404", "500", "오류가 발생", "접근 권한이 없"].find((err) => content.includes(err));
+      if (hasHttpError) {
         throw new Error(
-          `수강신청 페이지(code=161)에서 에러 콘텐츠가 감지됨.\n` +
-          `  감지된 키워드: "${matched}"\n` +
-          `  → 서버 오류 또는 접근 권한 문제일 가능성 있음`
+          `수강신청 페이지(code=161)에서 HTTP 에러 화면이 감지됨.\n` +
+          `  title: "${title}"\n` +
+          `  heading: "${heading}"\n` +
+          `  → 서버 오류 또는 접근 권한 문제일 수 있음`
         );
       }
     },
@@ -269,6 +279,31 @@ async function run() {
         console.log("   ⚠️ 진행상태 필터 미발견 (페이지 구조에 따라 다를 수 있음)");
       }
       // 이 필터는 선택적이므로 실패로 처리하지 않음
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
+      }
     },
     page
   );

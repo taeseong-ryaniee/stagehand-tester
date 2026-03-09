@@ -27,6 +27,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { navigateTo, assertNoErrorPage } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { waitForTableLoad } from "../../helpers/wait.js";
 import { config } from "../../config.js";
 
@@ -53,32 +54,49 @@ async function run() {
       await navigateTo(stagehand, config.pages.courseOperations);
       await waitForTableLoad(page);
 
-      // 텍스트 또는 type="submit" 기준으로 검색 버튼 탐색
-      const isDisabled: boolean = await page.evaluate(() => {
-        const buttons = Array.from(
-          document.querySelectorAll('button, input[type="submit"]')
-        ) as HTMLButtonElement[];
-        const searchBtn = buttons.find(
-          (btn) =>
-            btn.textContent?.includes("검색") ||
-            (btn as HTMLInputElement).value?.includes("검색")
-        );
-        if (!searchBtn) return false; // 버튼을 못 찾으면 별도 오류
-        return searchBtn.disabled;
+      // 텍스트/속성/onclick/href 기반으로 검색 액션 요소를 유연하게 탐색
+      const searchBtnState: {
+        exists: boolean;
+        disabled: boolean;
+      } = await page.evaluate(() => {
+        const candidates = Array.from(
+          document.querySelectorAll(
+            '.s_btn a, .s_btn button, .s_btn input[type="button"], .s_btn input[type="submit"], ' +
+            'a, a[href*="search"], a[onclick*="search"], button[onclick*="search"], input[onclick*="search"], ' +
+            'button, input[type="submit"]'
+          )
+        ) as Array<HTMLElement>;
+
+        const target = candidates.find((el) => {
+          const text = (el.textContent ?? "").trim();
+          const value = (el as HTMLInputElement).value ?? "";
+          const href = (el.getAttribute("href") ?? "").toLowerCase();
+          const onclick = (el.getAttribute("onclick") ?? "").toLowerCase();
+          const title = (el.getAttribute("title") ?? "").toLowerCase();
+          const ariaLabel = (el.getAttribute("aria-label") ?? "").toLowerCase();
+
+          return (
+            text.includes("검색") ||
+            value.includes("검색") ||
+            title.includes("검색") ||
+            ariaLabel.includes("검색") ||
+            href.includes("search") ||
+            onclick.includes("search")
+          );
+        });
+
+        if (!target) {
+          return { exists: false, disabled: false };
+        }
+
+        const disabled =
+          target.hasAttribute("disabled") ||
+          target.getAttribute("aria-disabled") === "true" ||
+          (target as HTMLButtonElement).disabled === true;
+        return { exists: true, disabled };
       });
 
-      const searchBtnExists: boolean = await page.evaluate(() => {
-        const buttons = Array.from(
-          document.querySelectorAll('button, input[type="submit"]')
-        );
-        return buttons.some(
-          (btn) =>
-            btn.textContent?.includes("검색") ||
-            (btn as HTMLInputElement).value?.includes("검색")
-        );
-      });
-
-      if (!searchBtnExists) {
+      if (!searchBtnState.exists) {
         throw new Error(
           `"검색" 텍스트를 가진 버튼을 찾을 수 없음.\n` +
           `  현재 URL: ${page.url()}\n` +
@@ -86,7 +104,7 @@ async function run() {
         );
       }
 
-      if (isDisabled) {
+      if (searchBtnState.disabled) {
         throw new Error(
           `검색 버튼이 disabled 상태로 렌더링됨.\n` +
           `  → 페이지 초기화 중 JS 오류로 인해 버튼이 활성화되지 못한 것일 수 있음`
@@ -308,10 +326,8 @@ async function run() {
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
 
       // 위젯 영역 클릭 시도 (클릭 가능한 위젯이 없으면 스킵)
-      const widgetLink = page
-        .locator('a[href*="code="], .widget a, .card a')
-        .first();
-      const widgetCount = await widgetLink.count();
+      const widgetSelector = 'a[href*="code="], .widget a[href], .card a[href]';
+      const widgetCount = await page.locator(widgetSelector).count();
 
       if (widgetCount === 0) {
         // 위젯 링크가 없는 대시보드 구조 → 스킵 (PASS 처리)
@@ -319,8 +335,13 @@ async function run() {
         return;
       }
 
-      const hrefBefore = await widgetLink.getAttribute("href");
-      await widgetLink.click();
+      const hrefBefore = await page.evaluate((selector: string) => {
+        const first = document.querySelector(selector) as HTMLAnchorElement | null;
+        if (!first) return "";
+        return first.getAttribute("href") ?? "";
+      }, widgetSelector);
+
+      await page.locator(widgetSelector).first().click();
       await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       await page.sendCDP("Page.handleJavaScriptDialog", { accept: true }).catch(() => {});
 
@@ -335,6 +356,31 @@ async function run() {
           `  현재 URL: ${urlAfter}\n` +
           `  → 위젯 링크 목적지 페이지가 올바르게 렌더링되지 않았거나 에러 페이지일 수 있음`
         );
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page

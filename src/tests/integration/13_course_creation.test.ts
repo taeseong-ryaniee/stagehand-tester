@@ -20,6 +20,7 @@ import { createStagehand, getPage } from "../../stagehand.js";
 import { login } from "../../helpers/auth.js";
 import { navigateTo } from "../../helpers/navigation.js";
 import { TestResult, testCase, saveSuiteResult } from "../../helpers/reporter.js";
+import { runSuitePersonaOverlay } from "../../helpers/persona.js";
 import { config } from "../../config.js";
 
 async function run() {
@@ -39,15 +40,25 @@ async function run() {
     results,
     "[로드] 강의개설(code=23) 에러 페이지(404/500) 없이 정상 로드 확인",
     async () => {
-      const content = await page.content();
-      const errorIndicators = ["404", "500", "오류가 발생", "접근 권한이 없"];
-      const hasError = errorIndicators.some((e) => content.includes(e));
-      if (hasError) {
-        const matched = errorIndicators.find((e) => content.includes(e));
+      const { title, heading } = (await page.evaluate(() => {
+        const headingEl =
+          document.querySelector("h1, h2, .error-title, .error-message, #error-title") ??
+          document.querySelector(".error, .err_wrap, .page-error");
+        return {
+          title: document.title?.trim() ?? "",
+          heading: (headingEl as HTMLElement | null)?.innerText?.trim() ?? "",
+        };
+      })) as { title: string; heading: string };
+
+      const hasHttpError = [/\b403\b/, /\b404\b/, /\b500\b/].some(
+        (pattern) => pattern.test(title) || pattern.test(heading)
+      );
+      if (hasHttpError) {
         throw new Error(
-          `강의개설 페이지(code=23)에서 에러 콘텐츠가 감지됨.\n` +
-          `  감지된 키워드: "${matched}"\n` +
-          `  → 서버 오류, 접근 권한 문제, 또는 잘못된 code 파라미터일 수 있음`
+          `강의개설 페이지(code=23)에서 HTTP 에러 화면이 감지됨.\n` +
+          `  title: "${title}"\n` +
+          `  heading: "${heading}"\n` +
+          `  → 서버 오류 또는 권한 차단일 수 있음`
         );
       }
     },
@@ -114,6 +125,31 @@ async function run() {
           `  img 태그 수: 0\n` +
           `  → 페이지 렌더링이 불완전하거나 예상 외의 상태일 가능성 있음`
         );
+      }
+    },
+    page
+  );
+
+
+  await testCase(
+    results,
+    "[페르소나] 스위트 매핑 페르소나 시나리오 오버레이 검증",
+    async () => {
+      const overlay = await runSuitePersonaOverlay({
+        suiteName: results.suiteName,
+        stagehand,
+        page,
+      });
+      const coverage = overlay.coverage;
+      if (coverage.totalExecuted < 1) {
+        throw new Error("페르소나 실행 결과가 모두 skipped입니다 (executed=0)");
+      }
+      if (coverage.totalFailed > 0) {
+        const failed = overlay.personaRuns
+          .filter((run) => run.status === "failed")
+          .map((run) => run.personaId + "(" + (run.error ?? "error") + ")")
+          .join(", ");
+        throw new Error("페르소나 실패 " + coverage.totalFailed + "건: " + failed);
       }
     },
     page
